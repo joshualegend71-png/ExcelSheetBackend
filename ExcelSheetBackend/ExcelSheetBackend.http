@@ -1,0 +1,6 @@
+@ExcelSheetBackend_HostAddress = http://localhost:5140
+
+GET {{ExcelSheetBackend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
