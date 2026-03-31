@@ -67,7 +67,7 @@ public class BankStatementController : ControllerBase
                 var val = prop.GetValue(bankStatement)?.ToString();
 
                 // FIXED: Proper condition
-                if (!string.IsNullOrWhiteSpace(val) && val != "0" && val != "0.00")
+                if (!string.IsNullOrWhiteSpace(val) || val != "0" || val != "0.00")
                 {
                     var processed = new ProcessedBankStatement
                     {
