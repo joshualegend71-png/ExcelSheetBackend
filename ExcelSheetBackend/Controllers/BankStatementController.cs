@@ -9,30 +9,35 @@ namespace ExcelSheetBackend.Controllers;
 [ApiController]
 public class BankStatementController : ControllerBase
 {
+
     [HttpPost("process")]
-    public IActionResult Process([FromBody] List<BankStatementDto> bankStatements)
+    public IActionResult Process(
+    [FromBody] List<BankStatementDto> bankStatements,
+    [FromQuery] string transactionType = "Withdrawal",
+    [FromQuery] string bankCode = "BNK")
     {
         if (bankStatements == null || !bankStatements.Any())
             return BadRequest("No data provided.");
+
+        var validTransactionTypes = new[] { "Deposit", "Withdrawal" };
+        if (!validTransactionTypes.Contains(transactionType))
+            return BadRequest($"Invalid transactionType '{transactionType}'. Must be 'Deposit' or 'Withdrawal'.");
+
+        if (string.IsNullOrWhiteSpace(bankCode))
+            return BadRequest("bankCode cannot be empty.");
 
         var allProcessed = new List<ProcessedBankStatement>();
         var allGLRecords = new List<GLRecord>();
 
         foreach (var statement in bankStatements)
         {
-            // Step 1: Validate & Extract relevant financial data
             var processed = ValidateData(statement);
             allProcessed.AddRange(processed);
 
-            // Step 2: Transform into GL Records
-            var documentType = "Deposit"; // Change logic if needed
-            var documentBankCode = "MAIN-BANK";
-
-            var glRecords = TransformData(documentType, documentBankCode, processed);
+            var glRecords = TransformData(transactionType, bankCode, processed);
             allGLRecords.AddRange(glRecords);
         }
 
-        // Step 3: Generate Excel
         var excelBytes = GenerateExcelFile(allGLRecords);
 
         return File(
@@ -44,13 +49,58 @@ public class BankStatementController : ControllerBase
 
     private static readonly Dictionary<string, string> BankCodeMap = new Dictionary<string, string>
     {
-        { "BankCharges", "CHG-001" },
-        { "Refund", "REF-102" },
-        { "Salary", "PAY-SAL" },
-        { "StaffCost", "EXP-STF" },
-        { "DeferredIncome", "INC-DEF" },
-        { "Reversal", "REV-999" },
-        { "InterbankTransfers", "TRF-INT" }
+        { "BankCharges", "81158" },
+        { "DeferredRevenueRefund", "50001" },
+        { "LicensingAndPermit", "81205" },
+        { "StaffLoanAndAdvances", "24000" },
+        { "OperationalExpenses", "81233" },
+        { "Flightoperationexpenses", "83004" },
+        { "FreightExpenses", "81232" },
+        { "AirportExpenses", "81226" },
+        { "OfficeExpenses", "81223" },
+        { "OperationalStaffCost", "83018" },
+        { "DieselAndFuel", "81138" },
+        { "CateringFees", "80009" },
+        { "Securityexp", "81227" },
+        { "RepairsAndMaintenance_Office", "81120" },
+        { "RepairsAndMaintAircraftParts", "81219" },
+        { "RepairsAndMaintenance_MV", "81119" },
+        { "BrandingPublicity", "81216" },
+        { "CrewTraining", "80049" },
+        { "AviationFuel", "80008" },
+        { "CharterExpenses", "80036" },
+        { "CharterCommission", "80012" },
+        { "NamaOtherCharges", "80005" },
+        { "VisaFeeCerpacImmigrationODC", "80019" },
+        { "PscChargesBicourtney", "80000" },
+        { "NcaaChargesCommandCheck", "80046" },
+        { "VipLoungeServices", "81246" },
+        { "NamaNavigationalCharges", "80004" },
+        { "FaanLandingcharges", "80007" },
+        { "IataLandingAndSubscriptions", "83016" },
+        { "CostofSales", "80037" },
+        { "OtherCostofSales", "80037" },
+        { "CleaningAndSanitation", "81242" },
+        { "Salary", "81130" },
+        { "StationElectricity", "80027" },
+        { "ComputerAndOfficeEquipment", "29000" },
+        { "FurnitureAndFittings", "29100" },
+        { "Entertainment", "81214" },
+        { "Telephoneexpenses", "81134" },
+        { "ProfessionAndLegalFees", "80034" },
+        { "Accrual_NSITF", "40031" },
+        { "MarketingExpenses", "81124" },
+        { "Insurance", "81217" },
+        { "VisaFeeCerpacImmigrationODC", "80019" },
+        { "HotelAccomodation", "81121" },
+        { "OfficeExpenses", "81223" },
+        { "MedicalExpensesOthers", "81142" },
+        { "InternetServices", "81128" },
+        { "Officerent", "81229" },
+        { "StationeryAndPrintingPapers", "81136" },
+        { "Publicrelationexpenses", "83003" },
+        { "GiftandDonations", "81122" },
+        { "Transport", "81215" }
     };
 
     [NonAction]
@@ -67,18 +117,20 @@ public class BankStatementController : ControllerBase
                 var val = prop.GetValue(bankStatement)?.ToString();
 
                 // FIXED: Proper condition
-                if (!string.IsNullOrWhiteSpace(val) || val != "0" || val != "0.00")
+                if (!string.IsNullOrWhiteSpace(val) && val != "0" && val != "0.00")
                 {
                     var processed = new ProcessedBankStatement
                     {
                         SerialNumber = bankStatement.SerialNumber,
-                        TransactionDate = bankStatement.TransactionDate,
+                        TransactionDate = bankStatement.TxnDate,
                         ValueDate = bankStatement.ValueDate,
-                        Description = bankStatement.Description,
+                        Description = bankStatement.Narration,
                         BankCode = BankCodeMap[prop.Name]
                     };
 
-                    if (decimal.TryParse(val, out decimal amt))
+                    if (decimal.TryParse(val, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out decimal amt))
                     {
                         processed.Amount = amt;
                     }
@@ -122,7 +174,7 @@ public class BankStatementController : ControllerBase
                     Amount = -amount // Credit (-)
                 };
             }
-            else
+            else if (documentType == "Withdrawal")
             {
                 // Withdrawal → Bank decreases
                 debitGlRecord = new GLRecord
@@ -141,6 +193,7 @@ public class BankStatementController : ControllerBase
                     Amount = amount // Credit (+) ✅
                 };
             }
+            else continue;
 
             glRecords.Add(debitGlRecord);
             glRecords.Add(creditGlRecord);
