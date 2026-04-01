@@ -6,8 +6,8 @@
 
         public DateTime TxnDate { get; set; }
         public DateTime ValueDate { get; set; }
-        public string Narration { get; set; }
-        public string RefNo { get; set; }
+        public string? Narration { get; set; }
+        public string? RefNo { get; set; }
         public decimal? Debit { get; set; }
 
         public decimal? BankCharges { get; set; }

@@ -91,9 +91,9 @@ public class BankStatementController : ControllerBase
         { "Accrual_NSITF", "40031" },
         { "MarketingExpenses", "81124" },
         { "Insurance", "81217" },
-        { "VisaFeeCerpacImmigrationODC", "80019" },
+        { "VisaFeeCerpacImmigrationODC2", "80019" },
         { "HotelAccomodation", "81121" },
-        { "OfficeExpenses", "81223" },
+        { "OfficeExpenses2", "81223" },
         { "MedicalExpensesOthers", "81142" },
         { "InternetServices", "81128" },
         { "Officerent", "81229" },
@@ -162,6 +162,8 @@ public class BankStatementController : ControllerBase
                 {
                     ID = $"{documentType}-{statement.SerialNumber}",
                     Description = statement.Description,
+                    TransactionDate = statement.TransactionDate,
+                    ValueDate = statement.ValueDate,
                     BankCode = documentBankCode,
                     Amount = amount // Debit (+)
                 };
@@ -170,6 +172,8 @@ public class BankStatementController : ControllerBase
                 {
                     ID = $"{documentType}-{statement.SerialNumber}",
                     Description = statement.Description,
+                    TransactionDate = statement.TransactionDate,
+                    ValueDate = statement.ValueDate,
                     BankCode = statement.BankCode,
                     Amount = -amount // Credit (-)
                 };
@@ -181,6 +185,8 @@ public class BankStatementController : ControllerBase
                 {
                     ID = $"{documentType}-{statement.SerialNumber}",
                     Description = statement.Description,
+                    TransactionDate = statement.TransactionDate,
+                    ValueDate = statement.ValueDate,
                     BankCode = documentBankCode,
                     Amount = -amount // Debit (-)
                 };
@@ -189,6 +195,8 @@ public class BankStatementController : ControllerBase
                 {
                     ID = $"{documentType}-{statement.SerialNumber}",
                     Description = statement.Description,
+                    TransactionDate = statement.TransactionDate,
+                    ValueDate = statement.ValueDate,
                     BankCode = statement.BankCode,
                     Amount = amount // Credit (+) ✅
                 };
@@ -210,7 +218,7 @@ public class BankStatementController : ControllerBase
 
             var headers = new[]
             {
-                "ID", "Description", "Bank Code", "Amount"
+                "ID", "Description", "TnxDate", "ValuDate", "Bank Code", "Amount"
             };
 
             // Add Headers
@@ -224,8 +232,10 @@ public class BankStatementController : ControllerBase
             {
                 worksheet.Cell(i + 2, 1).Value = records[i].ID;
                 worksheet.Cell(i + 2, 2).Value = records[i].Description;
-                worksheet.Cell(i + 2, 3).Value = records[i].BankCode;
-                worksheet.Cell(i + 2, 4).Value = records[i].Amount;
+                worksheet.Cell(i + 2, 3).Value = records[i].TransactionDate?.ToString("yyyy-MM-dd");
+                worksheet.Cell(i + 2, 4).Value = records[i].ValueDate?.ToString("yyyy-MM-dd");
+                worksheet.Cell(i + 2, 5).Value = records[i].BankCode;
+                worksheet.Cell(i + 2, 6).Value = records[i].Amount;
             }
 
             // Auto-fit columns (nice improvement)
