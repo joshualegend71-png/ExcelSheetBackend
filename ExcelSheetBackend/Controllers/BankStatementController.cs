@@ -77,7 +77,7 @@ public class BankStatementController : ControllerBase
             Amount = amount,
             DrErp = statement.DrErp,
             CrErp = statement.CrErp,
-            Balance = balance == 0 ? null : balance,
+            Balance = statement.Balance,
             Comments = statement.Comments
         };
     }
@@ -110,7 +110,7 @@ public class BankStatementController : ControllerBase
             worksheet.Cell(row, 7).Value = record.NegativeValue.HasValue ? record.NegativeValue.Value : 0;
             worksheet.Cell(row, 8).Value = record.DrErp;
             worksheet.Cell(row, 9).Value = record.CrErp;
-            worksheet.Cell(row, 10).Value = record.Balance.HasValue ? record.Balance.Value : 0;
+            worksheet.Cell(row, 10).Value = record.Balance;
             worksheet.Cell(row, 11).Value = record.Comments;
         }
 
