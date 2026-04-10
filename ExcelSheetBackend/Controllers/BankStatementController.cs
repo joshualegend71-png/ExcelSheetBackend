@@ -1,7 +1,6 @@
 ﻿using ClosedXML.Excel;
 using ExcelSheetBackend.Models;
 using Microsoft.AspNetCore.Mvc;
-using System.Reflection;
 
 namespace ExcelSheetBackend.Controllers;
 
@@ -9,12 +8,11 @@ namespace ExcelSheetBackend.Controllers;
 [ApiController]
 public class BankStatementController : ControllerBase
 {
-
     [HttpPost("process")]
     public IActionResult Process(
-    [FromBody] List<BankStatementDto> bankStatements,
-    [FromQuery] string transactionType = "Withdrawal",
-    [FromQuery] string bankCode = "BNK")
+        [FromBody] List<BankStatementDto> bankStatements,
+        [FromQuery] string transactionType = "Withdrawal",
+        [FromQuery] string bankCode = "BNK")
     {
         if (bankStatements == null || !bankStatements.Any())
             return BadRequest("No data provided.");
@@ -27,225 +25,99 @@ public class BankStatementController : ControllerBase
             return BadRequest("bankCode cannot be empty.");
 
         var allProcessed = new List<ProcessedBankStatement>();
-        var allGLRecords = new List<GLRecord>();
 
         foreach (var statement in bankStatements)
         {
             var processed = ValidateData(statement);
-            allProcessed.AddRange(processed);
-
-            var glRecords = TransformData(transactionType, bankCode, processed);
-            allGLRecords.AddRange(glRecords);
+            allProcessed.Add(processed);
         }
 
-        var excelBytes = GenerateExcelFile(allGLRecords);
+        var excelBytes = GenerateExcelFile(allProcessed);
 
         return File(
             excelBytes,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "FeePlan.xlsx"
+            "BankStatement.xlsx"
         );
     }
 
-    private static readonly Dictionary<string, string> BankCodeMap = new Dictionary<string, string>
-    {
-        { "BankCharges", "81158" },
-        { "DeferredRevenueRefund", "50001" },
-        { "LicensingAndPermit", "81205" },
-        { "StaffLoanAndAdvances", "24000" },
-        { "OperationalExpenses", "81233" },
-        { "Flightoperationexpenses", "83004" },
-        { "FreightExpenses", "81232" },
-        { "AirportExpenses", "81226" },
-        { "OfficeExpenses", "81223" },
-        { "OperationalStaffCost", "83018" },
-        { "DieselAndFuel", "81138" },
-        { "CateringFees", "80009" },
-        { "Securityexp", "81227" },
-        { "RepairsAndMaintenance_Office", "81120" },
-        { "RepairsAndMaintAircraftParts", "81219" },
-        { "RepairsAndMaintenance_MV", "81119" },
-        { "BrandingPublicity", "81216" },
-        { "CrewTraining", "80049" },
-        { "AviationFuel", "80008" },
-        { "CharterExpenses", "80036" },
-        { "CharterCommission", "80012" },
-        { "NamaOtherCharges", "80005" },
-        { "VisaFeeCerpacImmigrationODC", "80019" },
-        { "PscChargesBicourtney", "80000" },
-        { "NcaaChargesCommandCheck", "80046" },
-        { "VipLoungeServices", "81246" },
-        { "NamaNavigationalCharges", "80004" },
-        { "FaanLandingcharges", "80007" },
-        { "IataLandingAndSubscriptions", "83016" },
-        { "CostofSales", "80037" },
-        { "OtherCostofSales", "80037" },
-        { "CleaningAndSanitation", "81242" },
-        { "Salary", "81130" },
-        { "StationElectricity", "80027" },
-        { "ComputerAndOfficeEquipment", "29000" },
-        { "FurnitureAndFittings", "29100" },
-        { "Entertainment", "81214" },
-        { "Telephoneexpenses", "81134" },
-        { "ProfessionAndLegalFees", "80034" },
-        { "Accrual_NSITF", "40031" },
-        { "MarketingExpenses", "81124" },
-        { "Insurance", "81217" },
-        { "VisaFeeCerpacImmigrationODC2", "80019" },
-        { "HotelAccomodation", "81121" },
-        { "OfficeExpenses2", "81223" },
-        { "MedicalExpensesOthers", "81142" },
-        { "InternetServices", "81128" },
-        { "Officerent", "81229" },
-        { "StationeryAndPrintingPapers", "81136" },
-        { "Publicrelationexpenses", "83003" },
-        { "GiftandDonations", "81122" },
-        { "Transport", "81215" }
-    };
-
     [NonAction]
-    public List<ProcessedBankStatement> ValidateData(BankStatementDto bankStatement)
+    public ProcessedBankStatement ValidateData(BankStatementDto statement)
     {
-        var processedBankStatements = new List<ProcessedBankStatement>();
+        // Parse dates safely
+        DateTime? txnDate = null;
+        DateTime? valueDate = null;
 
-        PropertyInfo[] props = bankStatement.GetType().GetProperties();
+        if (DateTime.TryParse(statement.TxnDate, out DateTime parsedTxn))
+            txnDate = parsedTxn;
 
-        foreach (var prop in props)
+        if (DateTime.TryParse(statement.ValueDate, out DateTime parsedVal))
+            valueDate = parsedVal;
+
+        // Pick the positive value between Credit and Debit
+        decimal? amount = null;
+
+        if (decimal.TryParse(statement.Credit, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out decimal credit) && credit > 0)
+            amount = credit;
+        else if (decimal.TryParse(statement.Debit, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out decimal debit) && debit > 0)
+            amount = debit;
+
+        decimal.TryParse(statement.Balance, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out decimal balance);
+
+        return new ProcessedBankStatement
         {
-            if (BankCodeMap.ContainsKey(prop.Name))
-            {
-                var val = prop.GetValue(bankStatement)?.ToString();
-
-                // FIXED: Proper condition
-                if (!string.IsNullOrWhiteSpace(val) && val != "0" && val != "0.00")
-                {
-                    var processed = new ProcessedBankStatement
-                    {
-                        SerialNumber = bankStatement.SerialNumber,
-                        TransactionDate = bankStatement.TxnDate,
-                        ValueDate = bankStatement.ValueDate,
-                        Description = bankStatement.Narration,
-                        BankCode = BankCodeMap[prop.Name]
-                    };
-
-                    if (decimal.TryParse(val, System.Globalization.NumberStyles.Any,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out decimal amt))
-                    {
-                        processed.Amount = amt;
-                    }
-
-                    processedBankStatements.Add(processed);
-                }
-            }
-        }
-
-        return processedBankStatements;
+            SerialNumber = statement.SerialNumber,
+            TransactionDate = txnDate,
+            ValueDate = valueDate,
+            Narration = statement.Narration,
+            RefNo = statement.RefNo,
+            Amount = amount,
+            DrErp = statement.DrErp,
+            CrErp = statement.CrErp,
+            Balance = balance == 0 ? null : balance,
+            Comments = statement.Comments
+        };
     }
 
-    [NonAction]
-    public List<GLRecord> TransformData(string documentType, string documentBankCode, List<ProcessedBankStatement> processedBankStatements)
+    private byte[] GenerateExcelFile(List<ProcessedBankStatement> records)
     {
-        var glRecords = new List<GLRecord>();
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Bank Statements");
 
-        foreach (var statement in processedBankStatements)
+        var headers = new[]
         {
-            var amount = Math.Abs(statement.Amount ?? 0);
+            "S/N", "Txn Date", "Val. Date", "Narration", "Ref. No",
+            "Amount", "NegativeValue", "DR ERP", "CR ERP", "Balance", "Comments"
+        };
 
-            GLRecord debitGlRecord;
-            GLRecord creditGlRecord;
+        for (int i = 0; i < headers.Length; i++)
+            worksheet.Cell(1, i + 1).Value = headers[i];
 
-            if (documentType == "Deposit")
-            {
-                // Deposit → Bank increases
-                debitGlRecord = new GLRecord
-                {
-                    ID = $"{documentType}-{statement.SerialNumber}",
-                    Description = statement.Description,
-                    TransactionDate = statement.TransactionDate,
-                    ValueDate = statement.ValueDate,
-                    BankCode = documentBankCode,
-                    Amount = amount // Debit (+)
-                };
+        for (int i = 0; i < records.Count; i++)
+        {
+            int row = i + 2;
+            var record = records[i];
 
-                creditGlRecord = new GLRecord
-                {
-                    ID = $"{documentType}-{statement.SerialNumber}",
-                    Description = statement.Description,
-                    TransactionDate = statement.TransactionDate,
-                    ValueDate = statement.ValueDate,
-                    BankCode = statement.BankCode,
-                    Amount = -amount // Credit (-)
-                };
-            }
-            else if (documentType == "Withdrawal")
-            {
-                // Withdrawal → Bank decreases
-                debitGlRecord = new GLRecord
-                {
-                    ID = $"{documentType}-{statement.SerialNumber}",
-                    Description = statement.Description,
-                    TransactionDate = statement.TransactionDate,
-                    ValueDate = statement.ValueDate,
-                    BankCode = documentBankCode,
-                    Amount = -amount // Debit (-)
-                };
-
-                creditGlRecord = new GLRecord
-                {
-                    ID = $"{documentType}-{statement.SerialNumber}",
-                    Description = statement.Description,
-                    TransactionDate = statement.TransactionDate,
-                    ValueDate = statement.ValueDate,
-                    BankCode = statement.BankCode,
-                    Amount = amount // Credit (+) ✅
-                };
-            }
-            else continue;
-
-            glRecords.Add(debitGlRecord);
-            glRecords.Add(creditGlRecord);
+            worksheet.Cell(row, 1).Value = record.SerialNumber;
+            worksheet.Cell(row, 2).Value = record.TransactionDate?.ToString("yyyy-MM-dd");
+            worksheet.Cell(row, 3).Value = record.ValueDate?.ToString("yyyy-MM-dd");
+            worksheet.Cell(row, 4).Value = record.Narration;
+            worksheet.Cell(row, 5).Value = record.RefNo;
+            worksheet.Cell(row, 6).Value = record.Amount.HasValue ? record.Amount.Value : 0;
+            worksheet.Cell(row, 7).Value = record.NegativeValue.HasValue ? record.NegativeValue.Value : 0;
+            worksheet.Cell(row, 8).Value = record.DrErp;
+            worksheet.Cell(row, 9).Value = record.CrErp;
+            worksheet.Cell(row, 10).Value = record.Balance.HasValue ? record.Balance.Value : 0;
+            worksheet.Cell(row, 11).Value = record.Comments;
         }
 
-        return glRecords;
-    }
+        worksheet.Columns().AdjustToContents();
 
-    private byte[] GenerateExcelFile(List<GLRecord> records)
-    {
-        using (var workbook = new XLWorkbook())
-        {
-            var worksheet = workbook.Worksheets.Add("Bank Statements");
-
-            var headers = new[]
-            {
-                "ID", "Description", "TnxDate", "ValuDate", "Bank Code", "Amount"
-            };
-
-            // Add Headers
-            for (var i = 0; i < headers.Length; i++)
-            {
-                worksheet.Cell(1, i + 1).Value = headers[i];
-            }
-
-            // Add Data
-            for (int i = 0; i < records.Count; i++)
-            {
-                worksheet.Cell(i + 2, 1).Value = records[i].ID;
-                worksheet.Cell(i + 2, 2).Value = records[i].Description;
-                worksheet.Cell(i + 2, 3).Value = records[i].TransactionDate?.ToString("yyyy-MM-dd");
-                worksheet.Cell(i + 2, 4).Value = records[i].ValueDate?.ToString("yyyy-MM-dd");
-                worksheet.Cell(i + 2, 5).Value = records[i].BankCode;
-                worksheet.Cell(i + 2, 6).Value = records[i].Amount;
-            }
-
-            // Auto-fit columns (nice improvement)
-            worksheet.Columns().AdjustToContents();
-
-            using (var stream = new MemoryStream())
-            {
-                workbook.SaveAs(stream);
-                return stream.ToArray();
-            }
-        }
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
     }
 }
